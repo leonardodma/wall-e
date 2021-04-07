@@ -44,7 +44,7 @@ def acha_maior_contorno(gray):
     """ Estamos trabalhando com BGR como cores
         Retorna uma imagem com os contornos desenhados e a coordenada do centro do maior contorno
     """
-    contornos, arvore = cv2.findContours(gray.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contornos = cv2.findContours(gray.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
     rgb = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
     cv2.drawContours(rgb, contornos, -1, [255, 0, 0], 1)
     
@@ -63,7 +63,6 @@ def acha_maior_contorno(gray):
         cv2.drawContours(rgb, [maior], -1, [0, 0, 255], 2)
         crosshair(rgb, p, 5, (0,255,0))
     
-    coloca_texto(rgb, (50, 50), maior_area)
     
     return p, maior_area, rgb
 
@@ -73,14 +72,16 @@ def identifica_pista(frame):
     # frame = cv2.flip(frame, -1) # flip 0: eixo x, 1: eixo y, -1: 2 eixos
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    cor_menor = np.array([14, 199, 90])
-    cor_maior = np.array([179, 255, 255])
+    cor_menor = np.array([22, 185, 115])
+    cor_maior = np.array([34, 255, 255])
     segmentado_cor = cv2.inRange(frame_hsv, cor_menor, cor_maior)
     segmentado_cor = cv2.morphologyEx(segmentado_cor,cv2.MORPH_CLOSE,np.ones((7, 7)))
 
     centro_imagem = (frame.shape[1]//2, frame.shape[0]//2)
 
     centro_pista, area_pista, rgb = acha_maior_contorno(segmentado_cor)
+
+    coloca_texto(rgb, (50, 30), 'Area pista: {:.2f}'.format(area_pista))
 
     cv2.imshow('pista', rgb)
     cv2.waitKey(1)
@@ -108,7 +109,7 @@ def identifica_creeper(frame, cor):
 
     centro_maior_contorno, area_maior_contorno, rgb = acha_maior_contorno(segmentado_cor)
 
-    coloca_texto(rgb, (50, 30), 'Área creeper: {:.2f}'.format(area_maior_contorno))
+    coloca_texto(rgb, (50, 30), 'Area creeper: {:.2f}'.format(area_maior_contorno))
 
     cv2.imshow('creeper', rgb)
     cv2.waitKey(1)

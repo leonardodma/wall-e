@@ -4,7 +4,7 @@
 
 # Ros imports
 import rospy
-from geometry_msgs.msg import Twist, Vector3, Pose
+from geometry_msgs.msg import Twist, Vector3
 from sensor_msgs.msg import LaserScan, Image, CompressedImage
 from nav_msgs.msg import Odometry
 from tf import transformations
@@ -79,7 +79,7 @@ class Robot():
         """
         Função para receber os dados de proximidade do LaserScam
         """
-        print('Dado: {}'.format(dado.ranges[0]))
+        # print('Dado: {}'.format(dado.ranges[0]))
         if dado.ranges[0] <= 0.95:
             self.perto = True
         elif dado.ranges[0] >= 1.05:
@@ -124,23 +124,26 @@ class Robot():
         """
         Função para seguir a pista
         """
-        if (self.centro_pista[0] > self.centro_imagem[0]):
-            self.pub.publish(self.vel_direita)
-        elif (self.centro_pista[0] < self.centro_imagem[0]):
-            self.pub.publish(self.vel_esquerda)
-    
+        print(self.centro_pista)
+
+        if len(self.centro_pista) != 0:
+            if (self.centro_pista[0] > self.centro_imagem[0]):
+                self.pub.publish(self.vel_direita)
+            elif (self.centro_pista[0] < self.centro_imagem[0]):
+                self.pub.publish(self.vel_esquerda)
+        else:
+            pass    
 
     def segue_creeper(self):
         """
         Função para seguir o creeper
         """
-        print(self.centro_pista)
-        try:
+        if len(self.centro_creeper) != 0:
             if (self.centro_creeper[0] > self.centro_imagem[0]):
                 self.pub.publish(self.vel_direita)
             elif (self.centro_creeper[0] < self.centro_imagem[0]):
                 self.pub.publish(self.vel_esquerda)
-        except:
+        else:
             pass
     
 
@@ -168,6 +171,10 @@ class Robot():
         Função para fazer o robô retornar a pista após pegar um creeper.
         Recebe o ponto para onde o robô deve apontar para retornar
         """
+        print('Robô retornando para a pista! ')
+        self.pub.publish(self.vel_parado)
+        rospy.sleep(1)
+        
         x2, y2 = ponto
 
         # calcular theta
@@ -194,29 +201,39 @@ class Robot():
         Função para determinar a ação do robo com base nos dados da pista, creeper,
         proximidade...
         """
-        if self.perto:
-            self.estado =  "meia volta"
+
+        if self.area_creeper > 350:
+            estado = "segue creeper"
+            if self.perto:
+                self.ponto = (self.x, self.y)
+                estado = "retorna pista"
+                print('Ponto para retornar: {}'.format(self.ponto))
+                self.ponto = (self.x, self.y)
+                
         else:
-            if self.area_creeper > 300:
-                self.estado = "segue creeper"
-                if self.perto:
-                    self.estado = "retorna pista"
-                    self.ponto = (self.x,self.y)
+            if self.area_pista < 500:
+                estado =  "procura pista"
             else:
-                if self.area_pista < 500:
-                    self.estado =  "procura pista"
-                else:
-                    self.estado = "segue pista"
+                estado = "segue pista"
+                if self.perto:
+                    estado =  "meia volta"
+
+        return estado
 
 
     def main(self):
+        self.estado = self.determina_estado()
+        print('Estado: {}'.format(self.estado))
+        
         if self.estado == "meia volta":
             self.meia_volta()
         elif self.estado == "segue creeper":
             self.segue_creeper()
         elif self.estado == "retorna pista":
-            self.retorna_pista()
+            self.retorna_pista(self.ponto)
         elif self.estado == "procura pista":
             self.pub.publish(self.vel_giro)
         elif self.estado == "segue pista":
             self.segue_pista()
+        
+        #self.pub.publish(self.vel_parado)

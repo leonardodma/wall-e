@@ -9,7 +9,7 @@ w = 0.2  # Velocidade angular
 robo = Robot(v, w, "azul")
 
 if __name__ == "__main__":
-    rospy.init_node("wall-e")
+    rospy.init_node("wall_e")
 
     try:
         while not rospy.is_shutdown():
