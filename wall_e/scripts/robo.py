@@ -5,10 +5,9 @@
 # Ros imports
 import rospy
 from geometry_msgs.msg import Twist, Vector3
-from sensor_msgs.msg import LaserScan, Image, CompressedImage
+from sensor_msgs.msg import LaserScan, CompressedImage
 from nav_msgs.msg import Odometry
 from tf import transformations
-from tf import TransformerROS
 import tf2_ros
 from std_msgs.msg import Float64
 import rospkg
@@ -20,16 +19,15 @@ import cv2
 
 # Others imports
 from math import *
-import numpy as np
 
 from cormodule import *
 
 
 class Robot():
 
-    def __init__(self, v, w, cor_creeper, estacao=None):
+    def __init__(self, v, w, cor_creeper):
+        self.rospack = rospkg.RosPack() 
         self.cor_creeper = cor_creeper
-        self.estacao = estacao
 
         # Iniciando velocidades
         self.v = v
@@ -39,7 +37,9 @@ class Robot():
         self.vel_direita = Twist(Vector3(v,0,0), Vector3(0,0,-self.w))
         self.vel_esquerda = Twist(Vector3(v,0,0), Vector3(0,0,self.w))
         self.vel_giro = Twist(Vector3(0,0,0), Vector3(0,0,self.w)) 
+        self.vel_giro2 = Twist(Vector3(0,0,0), Vector3(0,0,-self.w)) 
         self.vel_parado = Twist(Vector3(0,0,0), Vector3(0,0,0)) 
+        self.vel_lento = Twist(Vector3(0,0,(self.v)/2), Vector3(0,0,0)) 
 
         # Laser Scan
         self.perto = False  
@@ -68,24 +68,36 @@ class Robot():
         # Estado
         self.estado = 'segue pista'
 
+        # Garra e Braço
+        self.braco_frente = 0
+        self.braco_levantado = 1.5
+        self.braco_recolhido = -1.5
+        self.garra_aberta = -1
+        self.garra_fechada = 0
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tfl = 0
+
         # Iniciando Tópicos
         self.pub = rospy.Publisher("cmd_vel", Twist, queue_size=3)
         self.recebe_scan = rospy.Subscriber("/scan", LaserScan, self.scaneou)
         self.image_sub = rospy.Subscriber(topico_imagem, CompressedImage, self.roda_todo_frame, queue_size=4, buff_size = 2**24)
         self.ref_odometria = rospy.Subscriber("/odom", Odometry, self.recebe_odometria)
 
+        self.braco_publisher = rospy.Publisher('/joint1_position_controller/command', Float64, queue_size=1)
+        self.garra_publisher = rospy.Publisher('/joint2_position_controller/command', Float64, queue_size=1)
+        
 
     def scaneou(self, dado):
         """
         Função para receber os dados de proximidade do LaserScam
         """
         # print('Dado: {}'.format(dado.ranges[0]))
-        if dado.ranges[0] <= 0.95:
+        if dado.ranges[0] <= 0.6:
             self.perto = True
-        elif dado.ranges[0] >= 1.05:
+        else:
             self.perto = False
 
-        print('Perto: {}'.format(self.perto))
+        # print('Perto: {}'.format(self.perto))
     
 
     def recebe_odometria(self, data):
@@ -171,9 +183,10 @@ class Robot():
         Função para fazer o robô retornar a pista após pegar um creeper.
         Recebe o ponto para onde o robô deve apontar para retornar
         """
+
         print('Robô retornando para a pista! ')
         self.pub.publish(self.vel_parado)
-        rospy.sleep(1)
+        rospy.sleep(2)
         
         x2, y2 = ponto
 
@@ -187,32 +200,63 @@ class Robot():
         tempo = angulo / self.w
 
         # corrigir o ângulo
-        self.pub.publish(self.vel_giro)
+        if angulo < 0:
+            self.pub.publish(self.vel_giro2)
+        else:
+            self.pub.publish(self.vel_giro)
+
         rospy.sleep(tempo)
 
-        # andar 0.8 metros
-        tempo2 = 0.8 / self.v
+        # andar 0.5 metros
+        tempo2 = 0.5 / self.v
         self.pub.publish(self.vel_linear)
         rospy.sleep(tempo2)
     
 
+    def controla_garra(self):
+        """
+        Função para controlar o robô para agarrar o creeper quando ele aproxima do robô
+
+        habilitar o controle da garra: roslaunch mybot_description mybot_control2.launch 
+        """
+        print('Controlando garra!')
+        # Levantar o braço
+        self.pub.publish(self.vel_parado)
+        rospy.sleep(1)
+        self.braco_publisher.publish(self.braco_frente)
+        self.garra_publisher.publish(self.garra_aberta)
+        rospy.sleep(1)
+
+        # Aproxima do creeper lentamente
+        tempo_aproxima = 0.5/((self.v)/2)
+        self.pub.publish(self.vel_lento)
+        rospy.sleep(tempo_aproxima)
+
+        # Agarra o creeper
+        self.garra_publisher.publish(self.garra_fechada)
+        rospy.sleep(0.1)
+        self.braco_publisher.publish(self.braco_levantado)
+        rospy.sleep(0.1)
+
+        # Retornar para a pista
+        self.retorna_pista(self.ponto)
+        print('Ponto para retornar: {}'.format(self.ponto))
+
+    
     def determina_estado(self):
         """
         Função para determinar a ação do robo com base nos dados da pista, creeper,
         proximidade...
         """
-
-        if self.area_creeper > 350:
+        if self.area_creeper > 400:
             estado = "segue creeper"
+            self.ponto = (self.x, self.y)
             if self.perto:
-                self.ponto = (self.x, self.y)
-                estado = "retorna pista"
-                print('Ponto para retornar: {}'.format(self.ponto))
-                self.ponto = (self.x, self.y)
+                estado = "controla garra"
                 
         else:
-            if self.area_pista < 500:
-                estado =  "procura pista"
+            if self.area_pista < 900:
+                estado = "procura pista"
             else:
                 estado = "segue pista"
                 if self.perto:
@@ -222,6 +266,8 @@ class Robot():
 
 
     def main(self):
+        self.tfl = tf2_ros.TransformListener(self.tf_buffer) #conversao do sistema de coordenadas 
+
         self.estado = self.determina_estado()
         print('Estado: {}'.format(self.estado))
         
@@ -229,11 +275,11 @@ class Robot():
             self.meia_volta()
         elif self.estado == "segue creeper":
             self.segue_creeper()
-        elif self.estado == "retorna pista":
-            self.retorna_pista(self.ponto)
         elif self.estado == "procura pista":
             self.pub.publish(self.vel_giro)
         elif self.estado == "segue pista":
             self.segue_pista()
+        elif self.estado == "controla garra":
+            self.controla_garra()
         
         #self.pub.publish(self.vel_parado)
