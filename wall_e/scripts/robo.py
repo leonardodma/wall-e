@@ -21,13 +21,16 @@ import cv2
 from math import *
 
 from cormodule import *
+from aruco import *
+from visao_module import *
 
 
 class Robot():
 
-    def __init__(self, v, w, cor_creeper):
+    def __init__(self, v, w, cor_creeper, estacao=None):
         self.rospack = rospkg.RosPack() 
         self.cor_creeper = cor_creeper
+        self.estacao = estacao
 
         # Iniciando velocidades
         self.v = v
@@ -64,6 +67,10 @@ class Robot():
         # Variáveis Creeper
         self.centro_creeper = []
         self.area_creeper = 0.0 # Variavel com a area do maior contorno
+
+        # Variaveis Mobile Net
+        self.centro_net = []
+        self.area_net = []
 
         # Estado
         self.estado = 'segue pista'
@@ -121,11 +128,22 @@ class Robot():
         try:
             cv_image = self.bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
             copia_imagem = cv_image.copy()
-            # cv_image = cv2.flip(cv_image, -1) # Descomente se for robo real
+            saida_net, resultados =  processa(copia_imagem)  
+
+            for r in resultados:
+                if r[0] == self.estacao and r[1] > 50:
+                    x1, y1 = r[2]
+                    x2, y2 = r[3]
+                    self.centro_net = (int((x2-x1)/2), int((y2-y1)/2))
+                    self.area_net = (x2-x1)*(y2-y1)
+                    print(self.centro_net)
+                    print(self.area_net)
+
             self.centro_pista, self.centro_imagem, self.area_pista =  identifica_pista(copia_imagem)
             self.centro_creeper, self.area_creeper = identifica_creeper(copia_imagem, self.cor_creeper)
 
             cv2.imshow("Camera", cv_image)
+            cv2.imshow("Net", saida_net)
             cv2.waitKey(1)
 
         except CvBridgeError as e:
@@ -136,7 +154,6 @@ class Robot():
         """
         Função para seguir a pista
         """
-        print(self.centro_pista)
 
         if len(self.centro_pista) != 0:
             if (self.centro_pista[0] > self.centro_imagem[0]):
