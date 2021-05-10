@@ -27,9 +27,10 @@ from visao_module import *
 
 class Robot():
 
-    def __init__(self, v, w, cor_creeper, estacao=None):
+    def __init__(self, v, w, cor_creeper, id_creeper, estacao):
         self.rospack = rospkg.RosPack() 
         self.cor_creeper = cor_creeper
+        self.id_creeper = id_creeper
         self.estacao = estacao
 
         # Iniciando velocidades
@@ -42,7 +43,7 @@ class Robot():
         self.vel_giro = Twist(Vector3(0,0,0), Vector3(0,0,self.w)) 
         self.vel_giro2 = Twist(Vector3(0,0,0), Vector3(0,0,-self.w)) 
         self.vel_parado = Twist(Vector3(0,0,0), Vector3(0,0,0)) 
-        self.vel_lento = Twist(Vector3(0,0,(self.v)/2), Vector3(0,0,0)) 
+        self.vel_lento = Twist(Vector3(0,0,(self.v)/3), Vector3(0,0,0)) 
 
         # Laser Scan
         self.perto = False  
@@ -52,7 +53,6 @@ class Robot():
         self.y = 0
         self.z = 0 
         self.alpha = 0
-        self.ponto = (0, 0)
 
         # Tópico de imagens
         self.bridge = CvBridge()
@@ -62,7 +62,7 @@ class Robot():
         # Variáveis pista
         self.centro_pista = []
         self.centro_imagem = []
-        self.area_pista = 0.0 # Variavel com a area do maior contorno
+        self.area_pista = 500 # Variavel com a area do maior contorno
         
         # Variáveis Creeper
         self.centro_creeper = []
@@ -74,6 +74,10 @@ class Robot():
 
         # Estado
         self.estado = 'segue pista'
+        self.creeper_pego = False
+        self.giro_efetuado = False
+        self.seguir_aruco = False
+        self.id_correto = False
 
         # Garra e Braço
         self.braco_frente = 0
@@ -83,6 +87,12 @@ class Robot():
         self.garra_fechada = 0
         self.tf_buffer = tf2_ros.Buffer()
         self.tfl = 0
+
+        # Aruco 
+        self.ids = None
+        self.match_id = 0
+        self.match_100 = 0
+        self.centro_aruco = None
 
         # Iniciando Tópicos
         self.pub = rospy.Publisher("cmd_vel", Twist, queue_size=3)
@@ -98,14 +108,11 @@ class Robot():
         """
         Função para receber os dados de proximidade do LaserScam
         """
-        # print('Dado: {}'.format(dado.ranges[0]))
-        if dado.ranges[0] <= 0.6:
+        if dado.ranges[0] <= 0.3:
             self.perto = True
         else:
             self.perto = False
 
-        # print('Perto: {}'.format(self.perto))
-    
 
     def recebe_odometria(self, data):
         """
@@ -128,22 +135,31 @@ class Robot():
         try:
             cv_image = self.bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
             copia_imagem = cv_image.copy()
+            aruco_image = copia_imagem
             saida_net, resultados =  processa(copia_imagem)  
 
             for r in resultados:
-                if r[0] == self.estacao and r[1] > 50:
+                if r[0] == self.estacao and r[1] > 30:
                     x1, y1 = r[2]
                     x2, y2 = r[3]
                     self.centro_net = (int((x2-x1)/2), int((y2-y1)/2))
                     self.area_net = (x2-x1)*(y2-y1)
                     print(self.centro_net)
                     print(self.area_net)
+                else:
+                    self.area_net = 0.0
 
             self.centro_pista, self.centro_imagem, self.area_pista =  identifica_pista(copia_imagem)
             self.centro_creeper, self.area_creeper = identifica_creeper(copia_imagem, self.cor_creeper)
 
-            cv2.imshow("Camera", cv_image)
-            cv2.imshow("Net", saida_net)
+            c, self.ids = identifica_id(aruco_image)
+
+            if self.ids == 100:
+                self.centro_aruco = c
+
+            cv2.circle(aruco_image, self.centro_aruco, radius=2, color=(0, 0, 255), thickness=5)
+
+            cv2.imshow("Aruco", aruco_image)
             cv2.waitKey(1)
 
         except CvBridgeError as e:
@@ -163,6 +179,7 @@ class Robot():
         else:
             pass    
 
+
     def segue_creeper(self):
         """
         Função para seguir o creeper
@@ -176,58 +193,28 @@ class Robot():
             pass
     
 
-    def meia_volta(self):
+    def segue_aruco(self):
         """
-        Função para dar meia volta ao encontrar um obstáculo
+        Função para seguir aruco
         """
-        # Rotação
-        angulo = pi
-        tempo1 = angulo/self.w
+        if self.centro_aruco != (0, 0):
+            if (self.centro_aruco[0] > self.centro_imagem[0]):
+                self.pub.publish(self.vel_direita)
+            elif (self.centro_aruco[0] < self.centro_imagem[0]):
+                self.pub.publish(self.vel_esquerda)
 
-        # Translação 
-        espaco = 0.5
-        tempo2 = espaco /self.v
-
-        # Publishes velocidades
-        self.pub.publish(self.vel_giro)
-        rospy.sleep(tempo1)
-        self.pub.publish(self.vel_linear)
-        rospy.sleep(tempo2)
     
-
-    def retorna_pista(self, ponto):
+    def segue_estacao(self):
         """
-        Função para fazer o robô retornar a pista após pegar um creeper.
-        Recebe o ponto para onde o robô deve apontar para retornar
+        Função para seguir a estação
         """
-
-        print('Robô retornando para a pista! ')
-        self.pub.publish(self.vel_parado)
-        rospy.sleep(2)
-        
-        x2, y2 = ponto
-
-        # calcular theta
-        theta = atan2(y2-self.y, x2-self.x)
-
-        # ângulo que o robô deve virar para se ajustar com o ponto
-        angulo = theta - self.alpha
-
-        # girar theta - alpha para a esquerda
-        tempo = angulo / self.w
-
-        # corrigir o ângulo
-        if angulo < 0:
-            self.pub.publish(self.vel_giro2)
+        if len(self.centro_net) != 0:
+            if (self.centro_net[0] > self.centro_imagem[0]):
+                self.pub.publish(self.vel_direita)
+            elif (self.centro_net[0] < self.centro_imagem[0]):
+                self.pub.publish(self.vel_esquerda)
         else:
-            self.pub.publish(self.vel_giro)
-
-        rospy.sleep(tempo)
-
-        # andar 0.5 metros
-        tempo2 = 0.5 / self.v
-        self.pub.publish(self.vel_linear)
-        rospy.sleep(tempo2)
+            pass
     
 
     def controla_garra(self):
@@ -236,7 +223,7 @@ class Robot():
 
         habilitar o controle da garra: roslaunch mybot_description mybot_control2.launch 
         """
-        print('Controlando garra!')
+        print('Levantando braço!')
         # Levantar o braço
         self.pub.publish(self.vel_parado)
         rospy.sleep(1)
@@ -244,40 +231,79 @@ class Robot():
         self.garra_publisher.publish(self.garra_aberta)
         rospy.sleep(1)
 
-        # Aproxima do creeper lentamente
-        tempo_aproxima = 0.5/((self.v)/2)
-        self.pub.publish(self.vel_lento)
-        rospy.sleep(tempo_aproxima)
 
+        print('Agarrando o creeper')
         # Agarra o creeper
         self.garra_publisher.publish(self.garra_fechada)
         rospy.sleep(0.1)
         self.braco_publisher.publish(self.braco_levantado)
         rospy.sleep(0.1)
+        
 
-        # Retornar para a pista
-        self.retorna_pista(self.ponto)
-        print('Ponto para retornar: {}'.format(self.ponto))
+    def interpreta_id_curva(self):
+        if self.ids == 100:
+            self.match_100 += 1
+
+        print('Matchs qrcode: {}'.format(self.match_100))
+
+        if self.match_100 > 10 and self.match_100 < 24 :
+            self.seguir_aruco = True
+        else:
+            self.seguir_aruco = False
 
     
+    def interpreta_id_creeper(self):
+
+        if self.ids == self.id_creeper:
+            self.match_id += 1
+
+        print('Matchs qrcode: {}'.format(self.match_100))
+
+        if not self.creeper_pego:
+            if self.match_id > 20:
+                self.id_correto = True
+
+
     def determina_estado(self):
         """
         Função para determinar a ação do robo com base nos dados da pista, creeper,
         proximidade...
         """
-        if self.area_creeper > 400:
-            estado = "segue creeper"
-            self.ponto = (self.x, self.y)
-            if self.perto:
-                estado = "controla garra"
-                
-        else:
-            if self.area_pista < 900:
-                estado = "procura pista"
-            else:
-                estado = "segue pista"
+        self.interpreta_id_curva()
+
+
+        # Creeper ainda não foi pego
+        if not self.creeper_pego:
+            if self.area_creeper > 500:
+                self.interpreta_id_creeper()
+                estado = "segue creeper"
+                    
                 if self.perto:
-                    estado =  "meia volta"
+                    if self.id_correto:
+                        # Creeper foi pego
+                        self.creeper_pego = True
+                        estado = "controla garra"
+                    else:
+                        estado = "procura pista"
+
+            else:
+                if self.seguir_aruco:
+                    estado = "segue aruco"
+                
+                else:
+                    if self.area_pista < 1000:
+                        estado = "procura pista"
+                    else:
+                        estado = "segue pista"
+        else:
+            if self.seguir_aruco:
+                    estado = "segue aruco"
+                
+            else:
+                if self.area_pista < 1000:
+                    estado = "procura pista"
+                else:
+                    estado = "segue pista"
 
         return estado
 
@@ -288,15 +314,19 @@ class Robot():
         self.estado = self.determina_estado()
         print('Estado: {}'.format(self.estado))
         
-        if self.estado == "meia volta":
-            self.meia_volta()
-        elif self.estado == "segue creeper":
+        
+        if self.estado == "segue creeper":
             self.segue_creeper()
         elif self.estado == "procura pista":
-            self.pub.publish(self.vel_giro)
+            self.pub.publish(Twist(Vector3(0,0,0), Vector3(0,0,(2*self.w))))
         elif self.estado == "segue pista":
             self.segue_pista()
         elif self.estado == "controla garra":
             self.controla_garra()
+        elif self.estado == "segue estacao":
+            self.segue_estacao()
+        elif self.estado == "segue aruco":
+            self.segue_aruco()
         
-        #self.pub.publish(self.vel_parado)
+        
+        rospy.sleep(0.1)

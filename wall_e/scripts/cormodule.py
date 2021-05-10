@@ -94,15 +94,15 @@ def identifica_creeper(frame, cor):
     # frame = cv2.flip(frame, -1) # flip 0: eixo x, 1: eixo y, -1: 2 eixos
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    if cor == 'azul':
-        cor_menor = np.array([98, 113, 56])
-        cor_maior = np.array([125, 255, 255])
-    elif cor == 'vermelho':
-        cor_menor = np.array([0, 211, 222])
-        cor_maior = np.array([9, 255, 255])
-    elif cor == 'rosa':
-        cor_menor = np.array([130, 187, 255])
-        cor_maior = np.array([180, 255, 255])
+    if cor == 'blue':
+        cor_menor = np.array([64, 38, 47])
+        cor_maior = np.array([99, 172, 255])
+    elif cor == 'orange':
+        cor_menor = np.array([1, 183, 111])
+        cor_maior = np.array([10, 255, 255])
+    elif cor == 'green':
+        cor_menor = np.array([35, 161, 69])
+        cor_maior = np.array([77, 255, 255])
 
     segmentado_cor = cv2.inRange(frame_hsv, cor_menor, cor_maior)
     segmentado_cor = cv2.morphologyEx(segmentado_cor,cv2.MORPH_CLOSE,np.ones((7, 7)))

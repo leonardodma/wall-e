@@ -4,9 +4,9 @@
 import rospy
 from robo import *
 
-v = 0.2  # Velocidade linear
+v = 0.35  # Velocidade linear
 w = 0.2  # Velocidade angular
-robo = Robot(v, w, "vermelho", "cat")
+robo = Robot(v, w, "orange", 11, "horse")
 
 if __name__ == "__main__":
     rospy.init_node("wall_e")
