@@ -34,4 +34,4 @@ def identifica_id(cv_image):
 		media_y = int((corners[0][1]+corners[1][1]+corners[2][1]+corners[3][1])/4)
 		centro = (media_x, media_y)
 
-	return centro, ids[0][0]
+	return centro, ids[0][0], ids[0]

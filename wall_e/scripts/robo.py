@@ -43,7 +43,7 @@ class Robot():
         self.vel_giro = Twist(Vector3(0,0,0), Vector3(0,0,self.w)) 
         self.vel_giro2 = Twist(Vector3(0,0,0), Vector3(0,0,-self.w)) 
         self.vel_parado = Twist(Vector3(0,0,0), Vector3(0,0,0)) 
-        self.vel_lento = Twist(Vector3(0,0,(self.v)/3), Vector3(0,0,0)) 
+        self.vel_lento = Twist(Vector3(0.05,0,0), Vector3(0,0,0)) 
 
         # Laser Scan
         self.perto = False  
@@ -90,6 +90,7 @@ class Robot():
 
         # Aruco 
         self.ids = None
+        self.all_ids = []
         self.match_id = 0
         self.match_100 = 0
         self.centro_aruco = None
@@ -108,7 +109,7 @@ class Robot():
         """
         Função para receber os dados de proximidade do LaserScam
         """
-        if dado.ranges[0] <= 0.3:
+        if dado.ranges[0] <= 0.4:
             self.perto = True
         else:
             self.perto = False
@@ -152,7 +153,7 @@ class Robot():
             self.centro_pista, self.centro_imagem, self.area_pista =  identifica_pista(copia_imagem)
             self.centro_creeper, self.area_creeper = identifica_creeper(copia_imagem, self.cor_creeper)
 
-            c, self.ids = identifica_id(aruco_image)
+            c, self.ids, self.all_ids = identifica_id(aruco_image)
 
             if self.ids == 100:
                 self.centro_aruco = c
@@ -231,6 +232,10 @@ class Robot():
         self.garra_publisher.publish(self.garra_aberta)
         rospy.sleep(1)
 
+        dist = 0.1
+        t = dist/0.05
+        self.pub.publish(self.vel_lento)
+        rospy.sleep(t)
 
         print('Agarrando o creeper')
         # Agarra o creeper
@@ -241,26 +246,32 @@ class Robot():
         
 
     def interpreta_id_curva(self):
+        """
+        Interpreta o id do Aruco da forca
+        """
         if self.ids == 100:
             self.match_100 += 1
 
         print('Matchs qrcode: {}'.format(self.match_100))
 
-        if self.match_100 > 10 and self.match_100 < 24 :
+        if self.match_100 > 10 and self.match_100 < 30 :
             self.seguir_aruco = True
         else:
             self.seguir_aruco = False
 
     
     def interpreta_id_creeper(self):
+        """
+        Interpreta o id do creeper
+        """
 
-        if self.ids == self.id_creeper:
+        if self.ids in self.all_ids:
             self.match_id += 1
 
-        print('Matchs qrcode: {}'.format(self.match_100))
+        print('Matchs creeper: {}'.format(self.match_id))
 
         if not self.creeper_pego:
-            if self.match_id > 20:
+            if self.match_id > 100:
                 self.id_correto = True
 
 
@@ -269,22 +280,21 @@ class Robot():
         Função para determinar a ação do robo com base nos dados da pista, creeper,
         proximidade...
         """
-        self.interpreta_id_curva()
 
+        # Chamndo as funções que interpretam os ids
+        self.interpreta_id_curva()
+        self.interpreta_id_creeper()
 
         # Creeper ainda não foi pego
         if not self.creeper_pego:
-            if self.area_creeper > 500:
+            if self.area_creeper > 500 and self.id_correto:
                 self.interpreta_id_creeper()
                 estado = "segue creeper"
                     
                 if self.perto:
-                    if self.id_correto:
-                        # Creeper foi pego
-                        self.creeper_pego = True
-                        estado = "controla garra"
-                    else:
-                        estado = "procura pista"
+                    self.creeper_pego = True
+                    estado = "controla garra"
+ 
 
             else:
                 if self.seguir_aruco:
@@ -294,7 +304,10 @@ class Robot():
                     if self.area_pista < 1000:
                         estado = "procura pista"
                     else:
+           
                         estado = "segue pista"
+
+        # Crreper já foi pego: Apenas seguir a pista
         else:
             if self.seguir_aruco:
                     estado = "segue aruco"
@@ -309,6 +322,9 @@ class Robot():
 
 
     def main(self):
+        """
+        Loop principal que aciona as funções com base no estado
+        """
         self.tfl = tf2_ros.TransformListener(self.tf_buffer) #conversao do sistema de coordenadas 
 
         self.estado = self.determina_estado()
