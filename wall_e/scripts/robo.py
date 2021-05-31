@@ -136,18 +136,18 @@ class Robot():
             cv_image = self.bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
             copia_imagem = cv_image.copy()
             aruco_image = copia_imagem
-            saida_net, resultados =  processa(copia_imagem)  
+            # saida_net, resultados =  processa(copia_imagem)  
 
-            for r in resultados:
-                if r[0] == self.estacao and r[1] > 30:
-                    x1, y1 = r[2]
-                    x2, y2 = r[3]
-                    self.centro_net = (int((x2-x1)/2), int((y2-y1)/2))
-                    self.area_net = (x2-x1)*(y2-y1)
-                    print(self.centro_net)
-                    print(self.area_net)
-                else:
-                    self.area_net = 0.0
+            # for r in resultados:
+            #     if r[0] == self.estacao and r[1] > 30:
+            #         x1, y1 = r[2]
+            #         x2, y2 = r[3]
+            #         self.centro_net = (int((x2-x1)/2), int((y2-y1)/2))
+            #         self.area_net = (x2-x1)*(y2-y1)
+            #         print(self.centro_net)
+            #         print(self.area_net)
+            #     else:
+            #         self.area_net = 0.0
 
             self.centro_pista, self.centro_imagem, self.area_pista =  identifica_pista(copia_imagem)
             self.centro_creeper, self.area_creeper = identifica_creeper(copia_imagem, self.cor_creeper)
@@ -323,8 +323,8 @@ class Robot():
             self.segue_pista()
         elif self.estado == "controla garra":
             self.controla_garra()
-        elif self.estado == "segue estacao":
-            self.segue_estacao()
+        # elif self.estado == "segue estacao":
+        #     self.segue_estacao()
         elif self.estado == "segue aruco":
             self.segue_aruco()
         
